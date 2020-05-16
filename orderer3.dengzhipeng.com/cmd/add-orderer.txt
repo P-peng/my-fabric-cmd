@@ -1,0 +1,221 @@
+#
+# 版本 1.4.4
+# 全局域名 baolijinglight.com
+# 基于first-network启动
+# 在其它机器动态添加 orderer2 节点
+# 注：域名可全局替换 baolijinglight.com
+#
+
+一、 添加基础挂载配置
+1 修改docker-compose-cli.yaml文件，增加config文件映射
+- ./config:/opt/gopath/src/github.com/hyperledger/fabric/peer/config/
+，方便后面文件修改
+
+  cli:
+    container_name: cli
+    image: hyperledger/fabric-tools:$IMAGE_TAG
+    tty: true
+    stdin_open: true
+    environment:
+      - SYS_CHANNEL=$SYS_CHANNEL
+      - GOPATH=/opt/gopath
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      #- FABRIC_LOGGING_SPEC=DEBUG
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_ID=cli
+      - CORE_PEER_ADDRESS=peer0.org1.baolijinglight.com:7051
+      - CORE_PEER_LOCALMSPID=Org1MSP
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/peers/peer0.org1.baolijinglight.com/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/peers/peer0.org1.baolijinglight.com/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/peers/peer0.org1.baolijinglight.com/tls/ca.crt
+      - CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/users/Admin@org1.baolijinglight.com/msp
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+        - /var/run/:/host/var/run/
+        - ./../chaincode/:/opt/gopath/src/github.com/chaincode
+        - ./crypto-config:/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/
+        - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
+        - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+        - ./config:/opt/gopath/src/github.com/hyperledger/fabric/peer/config/
+    depends_on:
+      - orderer.baolijinglight.com
+      - peer0.org1.baolijinglight.com
+      - peer1.org1.baolijinglight.com
+      - peer0.org2.baolijinglight.com
+      - peer1.org2.baolijinglight.com
+    networks:
+      - byfn
+
+二、 添加加密配置文件
+1. 在 crypto-config.yaml 中增加添加
+- Hostname: orderer2
+ 节点，以用于生成加密文件
+
+OrdererOrgs:
+  # ---------------------------------------------------------------------------
+  # Orderer
+  # ---------------------------------------------------------------------------
+  - Name: Orderer
+    Domain: baolijinglight.com
+    # ---------------------------------------------------------------------------
+    # "Specs" - See PeerOrgs below for complete description
+    # ---------------------------------------------------------------------------
+    Specs:
+      - Hostname: orderer
+      # 添加的新节点 orderer2
+      - Hostname: orderer2
+
+2. 生成增量加密文件，
+
+../bin/cryptogen extend --config=./crypto-config.yaml
+
+
+三、 更新系统通道
+1. 设置环境变量
+docker exec -it cli bash
+### Global env
+CHANNEL_NAME=mychannel
+CORE_PEER_TLS_ENABLED=true
+FABRIC_LOGGING_SPEC=INFO
+ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/orderers/orderer.baolijinglight.com/msp/tlscacerts/tlsca.baolijinglight.com-cert.pem
+
+PEER0_ORG1_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/peers/peer0.org1.baolijinglight.com/tls/ca.crt
+PEER0_ORG2_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.baolijinglight.com/peers/peer0.org2.baolijinglight.com/tls/ca.crt
+
+2. 设置OrdererMSP
+export CORE_PEER_LOCALMSPID=OrdererMSP
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/users/Admin@baolijinglight.com/msp/
+
+3. 获取byfn-sys-channel最新配置块文件config_block.pb
+mkdir -p config/system/
+peer channel fetch config config/system/config_block.pb -o orderer.baolijinglight.com:7050 -c byfn-sys-channel --tls --cafile $ORDERER_CA
+
+4. 将 config_block.pb 变成读json格式
+configtxlator proto_decode --input config/system/config_block.pb --type common.Block | jq .data.data[0].payload.data.config > config/system/config.json
+
+5. 将输出的config.json复制出主机，并修改为 config_updated.json
+
+6. base 加密 tls/server.crt 证书文件
+cat crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/tls/server.crt|base64
+
+7. 在 config_updated.json 新加入orderer2 tls 配置文件， 将上面输出的base64加密后的字符串写入 config_updated.json 中
+
+8. 把前后的两个json文件重新转换回pb类型文件
+configtxlator proto_encode --input config/system/config.json --type common.Config > config/system/config_block_origin.pb
+configtxlator proto_encode --input config/system/config_updated.json --type common.Config > config/system/config_block_updated.pb
+
+9. 比较前后两个pb文件的差异，得到改动部分
+configtxlator compute_update --channel_id byfn-sys-channel --original config/system/config_block_origin.pb --updated config/system/config_block_updated.pb > config/system/config_diff.pb
+
+10.把配置变化部分转化为json文件
+configtxlator proto_decode --input config/system/config_diff.pb --type common.ConfigUpdate > config/system/config_diff.json
+
+11. 为上述json文件添加头部信息(Header)，封装成一个完整的config update请求，注意channel_id设置为byfn-sys-channel
+echo '{"payload":{"header":{"channel_header":{"channel_id":"byfn-sys-channel", "type":2}},"data":{"config_update":'$(cat config/system/config_diff.json)'}}}' | jq . > config/system/config_diff_envelope.json
+
+12. 把封装好的json文件转换回pb格式文件
+configtxlator proto_encode --input config/system/config_diff_envelope.json --type common.Envelope > config/system/config_diff_envelope.pb
+
+13. 签名
+peer channel signconfigtx -f config/system/config_diff_envelope.pb
+
+14. 提交修改请求到orderer
+peer channel update -f config/system/config_diff_envelope.pb -c byfn-sys-channel -o orderer.baolijinglight.com:7050 --tls true --cafile $ORDERER_CA
+
+
+四、更新自定义mychannel配置
+1. 环境变量
+export CORE_PEER_LOCALMSPID=OrdererMSP
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/users/Admin@baolijinglight.com/msp/
+
+2. 获取mychannel最新配置块文件config_block.pb
+mkdir -p config/mychannel/
+peer channel fetch config config/mychannel/config_block.pb -o orderer.baolijinglight.com:7050 -c mychannel --tls --cafile $ORDERER_CA
+
+3. 从config_block.pb中提取有效的数据，并转换成可编辑json格式
+configtxlator proto_decode --input config/mychannel/config_block.pb --type common.Block | jq .data.data[0].payload.data.config > config/mychannel/config.json
+
+4. 将输出的config.json复制出主机，并修改为 config_updated.json
+
+5. base 加密 tls/server.crt 证书文件
+cat crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/tls/server.crt|base64
+
+6. 在 config_updated.json 新加入orderer2 tls 配置文件， 将上面输出的base64加密后的字符串写入 config_updated.json 中
+
+7.把前后的两个json文件重新转换回pb类型文件
+configtxlator proto_encode --input config/mychannel/config.json --type common.Config > config/mychannel/config_block_origin.pb
+configtxlator proto_encode --input config/mychannel/config_updated.json --type common.Config > config/mychannel/config_block_updated.pb
+
+8.比较前后两个pb文件的差异，得到改动部分
+configtxlator compute_update --channel_id mychannel --original config/mychannel/config_block_origin.pb --updated config/mychannel/config_block_updated.pb > config/mychannel/config_diff.pb
+
+9.把配置变化部分转化为json文件
+configtxlator proto_decode --input config/mychannel/config_diff.pb --type common.ConfigUpdate > config/mychannel/config_diff.json
+
+10.为上述json文件添加头部信息(Header)，封装成一个完整的config update请求，注意channel_id设置为mychannel
+echo '{"payload":{"header":{"channel_header":{"channel_id":"mychannel", "type":2}},"data":{"config_update":'$(cat config/mychannel/config_diff.json)'}}}' | jq . > config/mychannel/config_diff_envelope.json
+
+11.把封装好的json文件转换回pb格式文件
+configtxlator proto_encode --input config/mychannel/config_diff_envelope.json --type common.Envelope > config/mychannel/config_diff_envelope.pb
+
+12. 签名
+peer channel signconfigtx -f config/mychannel/config_diff_envelope.pb
+
+13. 提交修改请求到orderer
+peer channel update -f config/mychannel/config_diff_envelope.pb -c mychannel -o orderer.baolijinglight.com:7050 --tls true --cafile $ORDERER_CA
+
+14. 删除垃圾文件
+rm -rf config/*
+
+
+五、获取创世块
+1.
+export CORE_PEER_LOCALMSPID=OrdererMSP
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/users/Admin@baolijinglight.com/msp/
+peer channel fetch config channel-artifacts/genesis_updated.block -o orderer.baolijinglight.com:7050 -c byfn-sys-channel --tls --cafile $ORDERER_CA
+
+
+
+六. 启动orderer2节点
+1. 将旧机器 channel-artifacts/orderer.genesis.block  创世块 orderer.genesis.block，拷贝到新机器下channel-artifacts/
+
+2. 将旧机器 crypto-config 文件夹 ，拷贝到新机器下crypto-config
+
+3. 编写docker-compose-orderer2.yaml
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+volumes:
+  orderer2.baolijinglight.com:
+
+networks:
+  byfn:
+
+services:
+
+  orderer2.baolijinglight.com:
+    extends:
+      file: base/peer-base.yaml
+      service: orderer-base
+    container_name: orderer2.baolijinglight.com
+    networks:
+    - byfn
+    volumes:
+        - ./channel-artifacts/genesis_updated.block:/var/hyperledger/orderer/orderer.genesis.block
+        - ./crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/msp:/var/hyperledger/orderer/msp
+        - ./crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/tls/:/var/hyperledger/orderer/tls
+        - orderer2.baolijinglight.com:/var/hyperledger/production/orderer
+    ports:
+    - 7050:7050
+
+4. 启动
+IMAGE_TAG=1.4.4 docker-compose -f docker-compose-orderer2.yaml up -d
+
+2.查看日志，若有 raft 领导选举则成功
+

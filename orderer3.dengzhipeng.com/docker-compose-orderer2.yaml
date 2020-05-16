@@ -1,0 +1,29 @@
+# Copyright IBM Corp. All Rights Reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+version: '2'
+
+volumes:
+  orderer2.baolijinglight.com:
+
+networks:
+  byfn:
+
+services:
+
+  orderer2.baolijinglight.com:
+    extends:
+      file: base/peer-base.yaml
+      service: orderer-base
+    container_name: orderer2.baolijinglight.com
+    networks:
+      - byfn
+    volumes:
+      - ./channel-artifacts/genesis_updated.block:/var/hyperledger/orderer/orderer.genesis.block
+      - ./crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/msp:/var/hyperledger/orderer/msp
+      - ./crypto-config/ordererOrganizations/baolijinglight.com/orderers/orderer2.baolijinglight.com/tls/:/var/hyperledger/orderer/tls
+      - orderer2.baolijinglight.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
