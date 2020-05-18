@@ -8,7 +8,7 @@
 #
 
 一、产生 组织3 加密资料
-1.进入子目录
+1.进入子目录，新机器
 cd org3-artifacts
 
 2.生成组织3密钥文件
@@ -20,19 +20,23 @@ export FABRIC_CFG_PATH=$PWD && ../../bin/configtxgen -printOrg Org3MSP > ../chan
 4. 复制crypto-config目录，主要是需要各个节点tls证书
 cd ../ && cp -r crypto-config/ordererOrganizations org3-artifacts/crypto-config/
 
-二、 修改系统配置通道
+5. 将org3.json文件 复制到新机器
+
+二、 修改系统配置通道，旧机器
+
 1.进入 cli
 docker exec -it cli bash
+mkdir -p config/system
 
 2.导入变量
-export ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+export ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/orderers/orderer.baolijinglight.com/msp/tlscacerts/tlsca.baolijinglight.com-cert.pem
 export CHANNEL_NAME=mychannel
 
 3.输入环境变量确认
 echo $ORDERER_CA && echo $CHANNEL_NAME
 
 4.获取配置块
-peer channel fetch config config_block.pb -o orderer.example.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
+peer channel fetch config config/system/config_block.pb -o orderer.baolijinglight.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
 
 5.将配置块转换为json
 configtxlator proto_decode --input config/system/config_block.pb --type common.Block | jq .data.data[0].payload.data.config >  config/system/config.json
@@ -53,22 +57,22 @@ configtxlator compute_update --channel_id $CHANNEL_NAME --original config/system
 configtxlator proto_decode --input config/system/org3_update.pb --type common.ConfigUpdate | jq . > config/system/org3_update.json
 
 11. 将通道写入json文件
-echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat org3_update.json)'}}}' | jq . > config/system/org3_update_in_envelope.json
+echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat config/system/org3_update.json)'}}}' | jq . > config/system/org3_update_in_envelope.json
 
 12. 将已写入的json文件转换成pb文件
-configtxlator config/system/proto_encode --input config/system/org3_update_in_envelope.json --type common.Envelope --output config/system/org3_update_in_envelope.pb
+configtxlator proto_encode --input config/system/org3_update_in_envelope.json --type common.Envelope --output config/system/org3_update_in_envelope.pb
 
 13. 签名，（org1和org2都要签名，若org1签名了，切换org2环境变量，则不需要签名了）
 peer channel signconfigtx -f config/system/org3_update_in_envelope.pb
 
 14. 切换org2环境变量
 export CORE_PEER_LOCALMSPID="Org2MSP"
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/tls/ca.crt
-export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.example.com/users/Admin@org2.example.com/msp
-export CORE_PEER_ADDRESS=peer0.org2.example.com:9051
+export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.baolijinglight.com/peers/peer0.org2.baolijinglight.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org2.baolijinglight.com/users/Admin@org2.baolijinglight.com/msp
+export CORE_PEER_ADDRESS=peer0.org2.baolijinglight.com:9051
 
 15. 提交交易（广播）
-peer channel update -f config/system/org3_update_in_envelope.pb -c $CHANNEL_NAME -o orderer.example.com:7050 --tls --cafile $ORDERER_CA
+peer channel update -f config/system/org3_update_in_envelope.pb -c $CHANNEL_NAME -o orderer.baolijinglight.com:7050 --tls --cafile $ORDERER_CA
 
 二、 将 org3 加入通道
 1. 启动
@@ -78,21 +82,21 @@ docker-compose -f docker-compose-org3.yaml up -d
 docker exec -it Org3cli bash
 
 3.导入环境变量：ORDERER_CA和CHANNEL_NAME
-export ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/example.com/orderers/orderer.example.com/msp/tlscacerts/tlsca.example.com-cert.pem
+export ORDERER_CA=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/orderers/orderer.baolijinglight.com/msp/tlscacerts/tlsca.baolijinglight.com-cert.pem
 export CHANNEL_NAME=mychannel
 echo $ORDERER_CA && echo $CHANNEL_NAME
 
 4.检索通道块
-peer channel fetch 0 mychannel.block -o orderer.example.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
+peer channel fetch 0 mychannel.block -o orderer.baolijinglight.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
 
 5.加入区块
 peer channel join -b mychannel.block
 
 6.组织3对等节点加入区块
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org3.example.com/peers/peer1.org3.example.com/tls/ca.crt && export CORE_PEER_ADDRESS=peer1.org3.example.com:12051
+export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org3.baolijinglight.com/peers/peer1.org3.baolijinglight.com/tls/ca.crt && export CORE_PEER_ADDRESS=peer1.org3.baolijinglight.com:8051
 peer channel join -b mychannel.block
 
-三、升级调用链码
+三、升级调用链码，可以使用自己的链码
 
 1. 安装链码（可考虑所有的节点都安装）
 peer chaincode install -n mycc -v 2.0 -p github.com/chaincode/chaincode_example02/go/
@@ -102,33 +106,34 @@ peer chaincode install -n mycc -v 2.0 -p github.com/chaincode/chaincode_example0
 
 3.切换peer0.org1身份
 export CORE_PEER_LOCALMSPID="Org1MSP"
-export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/tls/ca.crt
-export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.example.com/users/Admin@org1.example.com/msp
-export CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/peers/peer0.org1.baolijinglight.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org1.baolijinglight.com/users/Admin@org1.baolijinglight.com/msp
+export CORE_PEER_ADDRESS=peer0.org1.baolijinglight.com:7051
 
 4.org1安装链码（可考虑所有的节点都安装）
 peer chaincode install -n mycc -v 2.0 -p github.com/chaincode/chaincode_example02/go/
 
 5.升级链码（有可能环境变量为空的，会出现错误）
-peer chaincode upgrade -o orderer.example.com:7050 --tls $CORE_PEER_TLS_ENABLED --cafile $ORDERER_CA -C $CHANNEL_NAME -n mycc -v 2.0 -c '{"Args":["init","a","90","b","210"]}' -P "OR ('Org1MSP.peer','Org2MSP.peer','Org3MSP.peer')"
+peer chaincode upgrade -o orderer.baolijinglight.com:7050 --tls $CORE_PEER_TLS_ENABLED --cafile $ORDERER_CA -C $CHANNEL_NAME -n mycc -v 2.0 -c '{"Args":["init","a","90","b","210"]}' -P "OR ('Org1MSP.peer','Org2MSP.peer','Org3MSP.peer')"
 
 6.测试查询，cli/org3cli都行
 peer chaincode query -C $CHANNEL_NAME -n mycc -c '{"Args":["query","a"]}'
 
 7. 调用链码背书转账，cli/org3cli都行
-peer chaincode invoke -o orderer.example.com:7050  --tls $CORE_PEER_TLS_ENABLED --cafile $ORDERER_CA -C $CHANNEL_NAME -n mycc -c '{"Args":["invoke","a","b","10"]}'
+peer chaincode invoke -o orderer.baolijinglight.com:7050  --tls $CORE_PEER_TLS_ENABLED --cafile $ORDERER_CA -C $CHANNEL_NAME -n mycc -c '{"Args":["invoke","a","b","10"]}'
 
 
-四、更新频道锚点链接（org3cli）
+四、更新频道锚点链接（org3cli），新机器
 1. 获取配置块
+docker exec -it Org3cli bash
 mkdir config/mychcnnel
-peer channel fetch config config/mychcnnel/config_block.pb -o orderer.example.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
+peer channel fetch config config/mychcnnel/config_block.pb -o orderer2.baolijinglight.com:7050 -c $CHANNEL_NAME --tls --cafile $ORDERER_CA
 
 2. 将配置块转换成json
 configtxlator proto_decode --input config/mychcnnel/config_block.pb --type common.Block | jq .data.data[0].payload.data.config > config/mychcnnel/config.json
 
 3.写入锚点
-jq '.channel_group.groups.Application.groups.Org3MSP.values += {"AnchorPeers":{"mod_policy": "Admins","value":{"anchor_peers": [{"host": "peer0.org3.example.com","port": 11051}]},"version": "0"}}' config.json > config/mychcnnel/modified_anchor_config.json
+jq '.channel_group.groups.Application.groups.Org3MSP.values += {"AnchorPeers":{"mod_policy": "Admins","value":{"anchor_peers": [{"host": "peer0.org3.baolijinglight.com","port": 7051}]},"version": "0"}}' config/mychcnnel/config.json > config/mychcnnel/modified_anchor_config.json
 
 4. 转换
 configtxlator proto_encode --input config/mychcnnel/config.json --type common.Config --output config/mychcnnel/config.pb
@@ -137,22 +142,22 @@ configtxlator proto_encode --input config/mychcnnel/config.json --type common.Co
 configtxlator proto_encode --input config/mychcnnel/modified_anchor_config.json --type common.Config --output config/mychcnnel/modified_anchor_config.pb
 
 6. 计算块差异
-configtxlator compute_update --channel_id $CHANNEL_NAME --original config/mychcnnel/config.pb --updated modified_anchor_config.pb --output config/mychcnnel/anchor_update.pb
+configtxlator compute_update --channel_id $CHANNEL_NAME --original config/mychcnnel/config.pb --updated config/mychcnnel/modified_anchor_config.pb --output config/mychcnnel/anchor_update.pb
 
 7. 差异块转换json
 configtxlator proto_decode --input config/mychcnnel/anchor_update.pb --type common.ConfigUpdate | jq . > config/mychcnnel/anchor_update.json
 
 8. 将新的消息加入进去
-echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat anchor_update.json)'}}}' | jq . > config/mychcnnel/anchor_update_in_envelope.json
+echo '{"payload":{"header":{"channel_header":{"channel_id":"'$CHANNEL_NAME'", "type":2}},"data":{"config_update":'$(cat config/mychcnnel/anchor_update.json)'}}}' | jq . > config/mychcnnel/anchor_update_in_envelope.json
 
 9. 转换
 configtxlator proto_encode --input config/mychcnnel/anchor_update_in_envelope.json --type common.Envelope --output config/mychcnnel/anchor_update_in_envelope.pb
 
 10. 广播
-peer channel update -f config/mychcnnel/anchor_update_in_envelope.pb -c $CHANNEL_NAME -o orderer.example.com:7050 --tls --cafile $ORDERER_CA
+peer channel update -f config/mychcnnel/anchor_update_in_envelope.pb -c $CHANNEL_NAME -o orderer.baolijinglight.com:7050 --tls --cafile $ORDERER_CA
 
-11. 查看peer0.org1.example.com日志
-docker logs -f peer0.org1.example.com
+11. 查看peer0.org1.baolijinglight.com日志
+docker logs -f peer0.org1.baolijinglight.com
 
 
 
