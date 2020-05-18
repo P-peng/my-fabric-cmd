@@ -13,3 +13,12 @@ peer chaincode upgrade -o orderer.baolijinglight.com:7050 -C mychannel -n chainc
 #
 peer chaincode invoke -o orderer.baolijinglight.com:7050 -C mychannel -n chaincode002 -c '{"function":"save","Args":["001", "222", "333"]}' --waitForEvent --tls --cafile /opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/ordererOrganizations/baolijinglight.com/orderers/orderer.baolijinglight.com/msp/tlscacerts/tlsca.baolijinglight.com-cert.pem
 
+
+IMAGE_TAG=1.4.4 docker-compose -f docker-compost-my-couchdb.yaml up -d
+IMAGE_TAG=1.4.4 docker-compose -f docker-compost-my-peer.yaml up -d
+
+
+export CORE_PEER_LOCALMSPID="Org3MSP"
+export CORE_PEER_TLS_ROOTCERT_FILE=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org3.baolijinglight.com/peers/peer1.org3.baolijinglight.com/tls/ca.crt
+export CORE_PEER_MSPCONFIGPATH=/opt/gopath/src/github.com/hyperledger/fabric/peer/crypto/peerOrganizations/org3.baolijinglight.com/users/Admin@org3.baolijinglight.com/msp
+export CORE_PEER_ADDRESS=peer1.org3.baolijinglight.com:8051
